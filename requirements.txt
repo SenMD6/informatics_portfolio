@@ -1,0 +1,5 @@
+scikit-learn~=1.8.0
+numpy~=2.4.2
+pandas~=3.0.1
+fairlearn~=0.13.0
+feature_engine~=1.9.4

@@ -1,0 +1,20 @@
+Variable Name	Role	Type	Description	Units	Missing Values
+age	Feature	Numerical	age in years	years	no
+sex	Feature	Categorical	"sex, male and female - intersex patients are not considered"		no
+cp	Feature	Categorical	"chest pain type - typical agina, atypical agina, non-anginal pain, and asymptomatic"		no
+trestbps	Feature	Numerical	resting blood pressure (on admission to the hospital)	mm Hg	no
+chol	Feature	Numerical	serum cholestoral	mg/dl	no
+fbs	Feature	Categorical	whether fasting blood sugar > 120 mg/dl (1 = true; 0 = false)		no
+restecg	Feature	Categorical	"resting electrocardiographic results. Possible values are normal, having ST-T wave abnormality (T wave inversions and/or ST elevation or depression of > 0.05 mV), or showing probable or definite left ventricular hypertrophy by Estes' criteria. We abbreviate it these values to normal, wave abnormality, left ventricular hypertrophy"		no
+thalach	Feature	Numerical	maximum heart rate achieved		no
+exang	Feature	Categorical	exercise induced angina (1 = yes; 0 = no)		no
+oldpeak	Feature	Numerical	ST depression induced by exercise relative to rest		no
+slope	Feature	Categorical	"the slope of the peak exercise ST segment. Can be upsloping, flat or downsloping"		no
+ca	Feature	Numerical	number of major vessels (0-3) colored by flourosopy		yes
+thal	Feature	Categorical	"result of thalium stress test. Values can be normal, fixed defect or reversable defect"		yes
+target	Class	Categorical	diagnosis of heart disease		no
+					
+					
+					
+This .csv file is an excerpt of the dataset from https://archive.ics.uci.edu/dataset/45/heart+disease					
+I have focused on the processed Cleveland dataset and replaced the integer encoding by their intended meanings. This is just for the purpose of this assessment.					
