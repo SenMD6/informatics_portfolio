@@ -1,90 +1,178 @@
 import copy
 
 import pandas as pd
-from feature_engine.discretisation import DecisionTreeDiscretiser
+from sklearn.impute import SimpleImputer
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import KBinsDiscretizer
 
 
-# You are allowed to change anything you see fit here for the purpose of Portfolio 2!
-
-# Simple file reading function. Reads the file at the offered path, and returns it as a DataFrame.
 def read_data(path: str) -> pd.DataFrame:
     dataset = None
     try:
         dataset = pd.read_csv(path, na_values='?')
     except FileNotFoundError as error:
         print(error)
-        print("The data you wanted to read was not at the location passed to the function. Please make sure to "
-              "provide a correct path to file.")
-
+        print(
+            "The data you wanted to read was not at the location passed to the function. "
+            "Please make sure to provide a correct path to file."
+        )
     except TypeError as terror:
         print(terror)
         print("Please provide a proper path to file, the input is missing.")
+
     return dataset
 
 
-# Discretises the chosen columns using the DecisionTreeDiscretiser. Yes, the resulting columns still show
-# as numerical, but interpretation changes and there is a limited set of them.
-# At input it takes:
-# - vars_to_discretize - list of column names to be discretized
-# - training_data - data to be discretised, but from which the discretiser is allowed to learn (not all discretisers
-#                   require learning - the one used here does).
-# - testing_data - data to be discretised, but from which the discretiser is not allowed to learn
-# - class_name - name of the class column
-#
-# As output, it produces a tuple of discretised training and testing data, held as DataFrames.
-def discretize(vars_to_discretize: list[str], training_data: pd.DataFrame, testing_data: pd.DataFrame,
-               class_name: str) -> \
-        tuple[pd.DataFrame, pd.DataFrame]:
-    features_train = training_data.drop(class_name, axis=1, inplace=False)
-    class_train = training_data[class_name]
-    features_test = testing_data.drop(class_name, axis=1, inplace=False)
-    class_test = testing_data[class_name]
+def split_train_test(
+        dataset: pd.DataFrame,
+        class_name: str,
+        test_size: float = 0.30,
+        random_state: int = 42
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Improved split:
+    - reproducible because random_state is fixed;
+    - stratified by sex + target so the train/test split keeps a more similar
+      distribution of male/female and healthy/disease combinations.
+    """
 
-    dt_discretiser = DecisionTreeDiscretiser(
-        cv=3,
-        scoring='accuracy',
-        variables=vars_to_discretize,
-        regression=False,
-        param_grid={'max_depth': [2, 3]}
+    stratify_column = dataset["sex"].astype(str) + "_" + dataset[class_name].astype(str)
+
+    training_dataset, testing_dataset = train_test_split(
+        dataset,
+        test_size=test_size,
+        random_state=random_state,
+        shuffle=True,
+        stratify=stratify_column
     )
-    dt_discretiser.fit(features_train, class_train)
 
-    discretised_features_train = dt_discretiser.transform(features_train)
-    discretised_features_test = dt_discretiser.transform(features_test)
-
-    discretised_training_data = copy.deepcopy(discretised_features_train)
-    discretised_training_data[class_name] = class_train
-    discretised_test_data = copy.deepcopy(discretised_features_test)
-    discretised_test_data[class_name] = class_test
-
-    return discretised_training_data, discretised_test_data
+    return training_dataset.reset_index(drop=True), testing_dataset.reset_index(drop=True)
 
 
-# Handles missing data in the cleveland dataset. In this case, it simply drops rows containing missing entries. Takes
-# a DataFrame at input and returns one at output.
-def handle_missing_data(data: pd.DataFrame) -> pd.DataFrame:
-    df_cleaned = data.dropna()
-    return df_cleaned
+def impute_missing_values(
+        training_data: pd.DataFrame,
+        testing_data: pd.DataFrame,
+        class_name: str
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Improved missing-value handling:
+    - instead of dropping incomplete patients, we keep them;
+    - numerical missing values are filled using the training median;
+    - categorical missing values are filled using the training mode.
+
+    This matters for fairness because row deletion can reduce representation,
+    especially for smaller groups.
+    """
+
+    training_data = copy.deepcopy(training_data)
+    testing_data = copy.deepcopy(testing_data)
+
+    feature_columns = [column for column in training_data.columns if column != class_name]
+
+    numeric_columns = [
+        column for column in feature_columns
+        if pd.api.types.is_numeric_dtype(training_data[column])
+    ]
+
+    categorical_columns = [
+        column for column in feature_columns
+        if column not in numeric_columns
+    ]
+
+    if numeric_columns:
+        numeric_imputer = SimpleImputer(strategy="median")
+
+        training_data[numeric_columns] = numeric_imputer.fit_transform(
+            training_data[numeric_columns]
+        )
+
+        testing_data[numeric_columns] = numeric_imputer.transform(
+            testing_data[numeric_columns]
+        )
+
+    if categorical_columns:
+        categorical_imputer = SimpleImputer(strategy="most_frequent")
+
+        training_data[categorical_columns] = categorical_imputer.fit_transform(
+            training_data[categorical_columns]
+        )
+
+        testing_data[categorical_columns] = categorical_imputer.transform(
+            testing_data[categorical_columns]
+        )
+
+    return training_data, testing_data
 
 
-# Preprocesses the cleveland dataset. Function modifies column types, handles missing data, and discretises
-# numerical variables. It also splits the dataset into training and testing parts.
+def discretize(
+        vars_to_discretize: list[str],
+        training_data: pd.DataFrame,
+        testing_data: pd.DataFrame,
+        class_name: str
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Improved discretisation:
+    - uses k-means discretisation;
+    - uses only 2 bins to avoid creating many small sparse categories;
+    - fitted only on training data to avoid data leakage.
+
+    Why 2 bins?
+    The Cleveland dataset is small, so too many bins can make Naïve Bayes unstable.
+    A smaller number of bins gives broader, more reliable categories.
+    """
+
+    training_data = copy.deepcopy(training_data)
+    testing_data = copy.deepcopy(testing_data)
+
+    discretiser = KBinsDiscretizer(
+        n_bins=2,
+        encode="ordinal",
+        strategy="kmeans"
+    )
+
+    training_data[vars_to_discretize] = discretiser.fit_transform(
+        training_data[vars_to_discretize]
+    )
+
+    testing_data[vars_to_discretize] = discretiser.transform(
+        testing_data[vars_to_discretize]
+    )
+
+    return training_data, testing_data
+
+
 def preprocess(data: pd.DataFrame, class_name: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Component 1 improved preprocessing pipeline.
+
+    Pipeline:
+    1. Copy original data.
+    2. Split with fixed random seed and sex-target stratification.
+    3. Impute missing values instead of deleting rows.
+    4. Discretise continuous variables using 2-bin k-means discretisation.
+    5. Convert to object type so the existing CategoricalNB classifier still works.
+    """
+
     dataset = copy.deepcopy(data)
 
-    # We handle missing entries
-    dataset = handle_missing_data(dataset)
+    training_dataset, testing_dataset = split_train_test(dataset, class_name)
 
-    # We shuffle the dataset and split it between testing and training data
-    dataset = dataset.sample(frac=1)
-    split = 0.7
-    training_dataset = dataset[0:int(len(dataset) * split)]
-    testing_dataset = dataset[int(len(dataset) * split):]
-    # We discretize the data. Don't be alarmed just because the returned values are numbers.
-    vars_to_discretize = ['age', 'trestbps', 'chol', 'thalach', 'oldpeak']
-    training_dataset, testing_dataset = discretize(vars_to_discretize, training_dataset, testing_dataset, class_name)
+    training_dataset, testing_dataset = impute_missing_values(
+        training_dataset,
+        testing_dataset,
+        class_name
+    )
 
-    # We change feature types
+    vars_to_discretize = ["age", "trestbps", "chol", "thalach", "oldpeak"]
+
+    training_dataset, testing_dataset = discretize(
+        vars_to_discretize,
+        training_dataset,
+        testing_dataset,
+        class_name
+    )
+
     training_dataset = training_dataset.astype(object)
     testing_dataset = testing_dataset.astype(object)
+
     return training_dataset, testing_dataset
